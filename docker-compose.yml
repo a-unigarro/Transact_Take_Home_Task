@@ -18,9 +18,10 @@ services:
       retries: 10
 
   pgadmin:
-    image: dpage/pgadmin4:latest
+    image: dpage/pgadmin4:9.1
     container_name: uk_companies_pgadmin
-    restart: always
+    restart: unless-stopped
+    profiles: [manual]
     environment:
       PGADMIN_DEFAULT_EMAIL: admin@admin.com
       PGADMIN_DEFAULT_PASSWORD: admin
