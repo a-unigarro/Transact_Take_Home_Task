@@ -1,4 +1,4 @@
-"""Descarga el driver JDBC de Postgres a ./jars (idempotente)."""
+"""Download the PostgreSQL JDBC driver into ./jars (idempotent)."""
 import urllib.request
 from pathlib import Path
 import  settings

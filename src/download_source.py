@@ -25,12 +25,14 @@ def download_file(url: str, path: Path):
         return
     path.parent.mkdir(parents=True, exist_ok=True)
     print(f"Downloading {url}")
+    tmp = path.with_name(path.name + ".part")
     with httpx.stream("GET", url, follow_redirects=True, timeout=60) as response:
         if response.status_code != 200:
             raise Exception(f"Failed to download {url}. Status code: {response.status_code}")
-        with open(path, "wb") as f:
+        with open(tmp, "wb") as f:
             for chunk in response.iter_bytes(chunk_size=1024 * 1024):
                 f.write(chunk)
+    tmp.rename(path)
 
 
 def profile_csv(path: Path) -> tuple[list[str], int]:
@@ -53,7 +55,7 @@ def download_source(ingestion_date: str | None = None) -> None:
     with zipfile.ZipFile(zip_path) as archive:
         archive.extractall(settings.CSV_DIR)
 
-    path_to_csv = (settings.CSV_DIR / settings.SOURCE_NAME).with_suffix(".csv")
+    path_to_csv = settings.CSV_DIR / f"{settings.SOURCE_NAME}.csv"
     columns, row_count = profile_csv(path_to_csv)
 
     manifest = {

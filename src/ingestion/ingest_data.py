@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 import json
 import logging
-from dataclasses import dataclass, field
+
 
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql.types import StructType
@@ -16,22 +16,9 @@ import settings
 
 
 log = logging.getLogger("ingest_dataset")
-TIMESTAMP_FORMAT = "yyyy-MM-dd HH:mm:ss"
-
-
-@dataclass(frozen=True)
-class Spec:
-    """Everything that differs between datasets. The pipeline code stays generic."""
-    schema: StructType
-    read_options: dict = field(default_factory=dict)
-    lower: tuple = ()      # columns to lowercase
-    upper: tuple = ()      # columns to uppercase
-    rename: dict = field(default_factory=dict)   # old name -> new name
-
-
 
 def read_raw(spark: SparkSession) -> DataFrame:    
-    path = (settings.CSV_DIR / settings.SOURCE_NAME).with_suffix('.csv')
+    path = settings.CSV_DIR / f"{settings.SOURCE_NAME}.csv"
     return (spark.read
             .option("header", True)
             .option("quote", '"')
@@ -57,23 +44,25 @@ def write_landing_manifest(entries: dict, base_dir=None):
 
 
 
-def run(spark: SparkSession | None = None, ingestion_date: str | None = None) -> dict:
+def run(spark: SparkSession | None = None, ingestion_date: str | None = None) -> None:
     owns_spark = spark is None
-    spark = spark or get_spark(f"load-to-s3", aws_profile=settings.AWS_PROFILE)
+    spark = spark or get_spark("load-to-landing")
     try:
         df = read_raw(spark)
-
         expected, actual = manifest_row_count(), df.count()
         if actual != expected:
             raise ValueError(f"read {actual} rows, manifest says {expected}")
-        storage.delete(landing_manifest_location())
-        (df.coalesce(1)
-           .write.mode("overwrite")
-           .parquet(storage.to_spark_path(settings.LANDING_DIR)))
-        log.info("wrote %9d rows for ingestion_date=%s", actual, ingestion_date)
 
+        dest = storage.to_spark_path(settings.LANDING_DIR)
+        df.coalesce(1).write.mode("overwrite").parquet(dest)   # overwrite also clears the old _manifests/
+
+        written = spark.read.parquet(dest).count()
+        if written != expected:
+            raise ValueError(f"parquet has {written} rows, manifest says {expected}")
+        log.info("verified: csv=%d parquet=%d (ingestion_date=%s)", expected, written, ingestion_date)
         
         entries = {
+            "source_file": settings.SOURCE_NAME,
             "snapshot_date": settings.SNAPSHOT_DATE,
             "ingestion_date": ingestion_date,
             "row_count": actual,
@@ -84,10 +73,7 @@ def run(spark: SparkSession | None = None, ingestion_date: str | None = None) ->
                         if f["name"].endswith(".parquet")],
         }
         write_landing_manifest(entries)
-        written = spark.read.parquet(storage.to_spark_path(settings.LANDING_DIR)).count()
-        if written != expected:
-            raise ValueError(f"parquet has {written} rows, manifest says {expected}")
-        log.info("verified: csv=%d parquet=%d", expected, written)
+
     finally:
         if owns_spark:
             spark.stop()

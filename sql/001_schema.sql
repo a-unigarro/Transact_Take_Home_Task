@@ -29,8 +29,7 @@ CREATE TABLE IF NOT EXISTS registry.company_rejected (
   registry_id   text,
   legal_name    text,
   legal_form_label text,
-  status        text,
-  raw_company_number text
+  status        text
 );
 CREATE INDEX IF NOT EXISTS ix_rejected_snapshot ON registry.company_rejected (snapshot_date, reject_reason);
 

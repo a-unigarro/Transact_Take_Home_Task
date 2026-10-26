@@ -12,40 +12,26 @@ def _s3_connector_installed(jars_dir: Path | None = None) -> bool:
     return any(jars_dir.glob("hadoop-aws-*.jar"))
 
 
-def get_spark(app_name: str = "companies-house", aws_profile: str = None) -> SparkSession:
+def get_spark(app_name: str = "companies-house") -> SparkSession:
     builder = (
         SparkSession.builder
         .master("local[*]")                                   # use all local cores, no cluster
         .appName(app_name)
-        .config("spark.log.level", "ERROR")
-        .config("spark.sql.shuffle.partitions", "8")          # default 200 is absurd for 100 MB
+        .config("spark.sql.shuffle.partitions", "8")          # the default of 200 is far too many for this volume
         .config("spark.sql.session.timeZone", "UTC")          # avoid machine-dependent timestamps
-        .config("spark.sql.sources.partitionOverwriteMode", "dynamic")  # overwrite only touched partitions
     )
     if settings.uses_s3():
-        # Si pasas un perfil, usamos ProfileCredentialsProvider, si no, dejamos el Default
-        if aws_profile:
-            provider = "software.amazon.awssdk.auth.credentials.ProfileCredentialsProvider"
-            builder = (
-                builder
-                .config("spark.hadoop.fs.s3a.aws.credentials.provider", provider)
-                .config("spark.hadoop.fs.s3a.profile", aws_profile)
-            )
-        else:
-            provider = "software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider"
-            builder = builder.config("spark.hadoop.fs.s3a.aws.credentials.provider", provider)
-            
-        builder = builder.config("spark.hadoop.fs.s3a.endpoint.region", settings.AWS_REGION)
-        
-        if not _s3_connector_installed():   # on your laptop: download at first start (cached in ~/.ivy2.5.2)
+        # Default provider chain: AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY from .env (exported by load_dotenv)
+        builder = (
+            builder
+            .config("spark.hadoop.fs.s3a.aws.credentials.provider",
+                    "software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider")
+            .config("spark.hadoop.fs.s3a.endpoint.region", settings.AWS_REGION)
+        )
+        if not _s3_connector_installed():   # on a laptop the connector is downloaded at first start
             builder = builder.config("spark.jars.packages",
                                      f"org.apache.hadoop:hadoop-aws:{settings.HADOOP_AWS_VERSION}")
-    
-    spark = builder.getOrCreate()     
+
+    spark = builder.getOrCreate()
     spark.sparkContext.setLogLevel("ERROR")
-        
     return spark
-
-
-
-

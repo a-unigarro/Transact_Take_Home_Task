@@ -23,7 +23,6 @@ SNAPSHOT_DATE = re.search(r"\d{4}-\d{2}-\d{2}", SOURCE_FILE.name).group()
 SOURCE_URL = f"https://download.companieshouse.gov.uk/{SOURCE_FILE.name}"
 
 AWS_REGION = os.getenv("AWS_REGION", "eu-central-1")
-AWS_PROFILE = os.getenv("AWS_PROFILE", "default")
 HADOOP_AWS_VERSION = os.getenv("HADOOP_AWS_VERSION", "3.5.0")
 
 DATA_DIR = Path(os.getenv("DATA_DIR", PROJECT_DIR / "data"))

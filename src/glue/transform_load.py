@@ -41,9 +41,8 @@ LEGAL_FORMS = {
     "Royal Charter Company": ("RC", "Royal charter company"),
     "Investment Company with Variable Capital": ("ICVC", "Investment company with variable capital"),
 }
-# Basic validity: Companies House numbers are 8 alphanumeric characters.
-# The stricter pattern (digits or 2-letter prefix + 6 digits) is reported by the DQ step.
-VALID_REGISTRY_ID = r"^([0-9]{8}|[A-Z]{2}[0-9]{6})$"
+# Companies House numbers: 8 digits, or a 2-letter prefix + 6 digits (SC, NI, OC, LP, ...)
+VALID_REGISTRY_ID = r"^[0-9A-Z]{8}$"
 
 
 def parse_args():
@@ -60,6 +59,9 @@ def parse_args():
         if not m:
             sys.exit("pass --SNAPSHOT_DATE or use a snapshot_date=YYYY-MM-DD path")
         args.SNAPSHOT_DATE = m.group(1)
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", args.SNAPSHOT_DATE):
+        sys.exit("SNAPSHOT_DATE must be YYYY-MM-DD")
+    
     return args
 
 
@@ -148,33 +150,33 @@ def split_rejects(out: DataFrame):
 
 def dq_report(out: DataFrame, valid: DataFrame, rejected: DataFrame, snapshot_date: str) -> dict:
     total = out.count()
+    den = max(total, 1)
+    DQ_COLS = ["registry_id"] + BUSINESS
+
     # Null rate per harmonized column, computed in one pass.
-    nulls = out.select(*[F.sum(F.col(c).isNull().cast("int")).alias(c) for c in COLS]).first().asDict()
+    nulls = out.select(*[F.sum(F.col(c).isNull().cast("int")).alias(c) for c in DQ_COLS]).first().asDict()
+    den = max(total, 1)
     strict_bad = out.filter(~F.col("registry_id").rlike(VALID_REGISTRY_ID)).count()
     unmapped = (out.filter(F.col("legal_form_code").isNull())
                 .groupBy("legal_form_label").count().orderBy(F.desc("count")).limit(20).collect())
-    reasons = {r["reject_reason"]: r["count"] for r in rejected.groupBy("reject_reason").count().collect()}
-    future = out.filter(F.col("founding_date") > F.current_date()).count()
+    reasons = {r["reject_reason"]: r["count"] for r in rejected.groupBy("reject_reason").count().collect()}    
     return {
         "source_file": os.getenv("SOURCE_NAME"),
         "snapshot_date": snapshot_date,
         "rows_read": total,
         "rows_valid_unique": valid.count(),
         "rows_rejected": reasons,
-        "null_rate": {c: f"{((nulls[c] or 0) / total * 100):.2f}%" for c in COLS},
-        "registry_id_not_strict_format": strict_bad,
-        "founding_date_in_future": future,
+        "null_rate": {c: f"{((nulls[c] or 0) / den * 100):.2f}%" for c in DQ_COLS},        
         "unmapped_legal_forms_top20": [{"label": r["legal_form_label"], "rows": r["count"]} for r in unmapped],
     }
 
 
-def write_dq(spark, args, report: dict):
+def write_dq(args, report: dict):
     path = Path(os.getenv("DQ_DIR", "output/dq")) / f"snapshot_date={args.SNAPSHOT_DATE}"
     try:
         path.mkdir(parents=True, exist_ok=True)
-        target = path / "report.json"
-        target.write_text(json.dumps(report, indent=2, default=str))
-        print(f"DQ report written to {target}")
+        (path / "report.json").write_text(json.dumps(report, indent=2, default=str))
+        print(f"DQ report written to {path / 'report.json'}")
     except PermissionError:
         print(json.dumps(report, indent=2, default=str))
         print(f"WARNING: cannot write {path}; run: mkdir -p output/dq && chmod -R 777 output")
@@ -200,14 +202,19 @@ def main():
     valid, rejected = valid.cache(), rejected.cache()
 
     report = dq_report(out, valid, rejected, args.SNAPSHOT_DATE)
+    # Validate that the accounting of rows is consistent: read = valid + rejected.
+    rejected_n = sum(report["rows_rejected"].values())
+    if report["rows_read"] != report["rows_valid_unique"] + rejected_n:
+        raise RuntimeError(f"row accounting mismatch: read={report['rows_read']} "
+                           f"valid={report['rows_valid_unique']} rejected={rejected_n}")
+    
     print(f"read={report['rows_read']} valid_unique={report['rows_valid_unique']}")
 
     # Rejected rows: replace this snapshot's batch (delete + append) so re-runs do not duplicate.
     run_sql(spark, args, f"DELETE FROM registry.company_rejected WHERE snapshot_date = '{args.SNAPSHOT_DATE}'")
     jdbc_write(rejected.select(
         F.to_date(F.lit(args.SNAPSHOT_DATE)).alias("snapshot_date"), "reject_reason",
-        "registry_id", "legal_name", "legal_form_label", "status",
-        F.col("registry_id").alias("raw_company_number")), args, "registry.company_rejected")
+        "registry_id", "legal_name", "legal_form_label", "status"), args, "registry.company_rejected")
 
     # Staging is fully replaced on every run, then upserted into the target.
     jdbc_write(valid.select(*COLS), args, "registry.company_staging", mode="overwrite", truncate=True)
