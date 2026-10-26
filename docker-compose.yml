@@ -1,0 +1,52 @@
+services:
+  db:
+    image: postgres:18
+    container_name: uk_companies_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    ports: ["5432:5432"]
+    volumes:
+      - postgres_data:/var/lib/postgresql/
+      - ./sql:/docker-entrypoint-initdb.d:ro   
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: uk_companies_pgadmin
+    restart: always
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: "False"          # single-user, no login screen
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+    ports: ["8080:80"]
+    depends_on:
+      db: {condition: service_healthy}
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+      - ./pgadmin/servers.json:/pgadmin4/servers.json:ro
+
+  glue:
+    image: public.ecr.aws/glue/aws-glue-libs:5
+    profiles: [manual]
+    depends_on:
+      db: {condition: service_healthy}
+    env_file: [.env]
+    environment:
+      - JDBC_URL=jdbc:postgresql://db:5432/${DB_NAME}?reWriteBatchedInserts=true
+      - PYTHONDONTWRITEBYTECODE=1
+    working_dir: /home/hadoop/workspace
+    volumes:
+      - .:/home/hadoop/workspace
+      - ${HOME}/.aws-docker:/home/hadoop/.aws:ro
+
+volumes:
+  postgres_data:
+  pgadmin_data:

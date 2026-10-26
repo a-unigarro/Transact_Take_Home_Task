@@ -1,0 +1,4 @@
+pandas
+httpx
+pyspark==4.2.0
+boto3

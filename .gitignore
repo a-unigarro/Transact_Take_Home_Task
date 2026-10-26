@@ -1,0 +1,24 @@
+# Terraform (commit the .tf files, never state or variables)
+infra/
+
+# Python
+__pycache__/
+env/
+.venv/
+
+# Secrets and local config
+.env
+pgadmin/servers.json
+
+# Data and drivers (downloaded by scripts)
+data/
+jars/
+
+# Windows metadata
+*:Zone.Identifier
+
+# Generated reports (keep the folder only)
+output/*
+!output/dq/
+output/dq/*
+!output/dq/.gitkeep
