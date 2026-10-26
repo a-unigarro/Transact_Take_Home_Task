@@ -160,7 +160,7 @@ def dq_report(out: DataFrame, valid: DataFrame, rejected: DataFrame, snapshot_da
         "rows_read": total,
         "rows_valid_unique": valid.count(),
         "rows_rejected": reasons,
-        "null_rate": {c: round((nulls[c] or 0) / total, 6) for c in COLS},
+        "null_rate": {c: f"{((nulls[c] or 0) / total * 100):.2f}%" for c in COLS},
         "registry_id_not_strict_format": strict_bad,
         "founding_date_in_future": future,
         "unmapped_legal_forms_top20": [{"label": r["legal_form_label"], "rows": r["count"]} for r in unmapped],
