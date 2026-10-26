@@ -156,6 +156,7 @@ def dq_report(out: DataFrame, valid: DataFrame, rejected: DataFrame, snapshot_da
     reasons = {r["reject_reason"]: r["count"] for r in rejected.groupBy("reject_reason").count().collect()}
     future = out.filter(F.col("founding_date") > F.current_date()).count()
     return {
+        "source_file": os.getenv("SOURCE_NAME"),
         "snapshot_date": snapshot_date,
         "rows_read": total,
         "rows_valid_unique": valid.count(),
