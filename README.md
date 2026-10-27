@@ -22,7 +22,7 @@ CSV (one split file) → raw Parquet (S3 or local) → Glue PySpark job → Post
 | iii | Idempotent load | `transform_load.py`, `sql/001_schema.sql` |
 | iv | Spark JDBC → PostgreSQL | `jdbc_write()`, `run_sql()` |
 | v | Data quality checks | `output/dq/.../report.json` |
-| vi-a | |[Section 7](#7-monthly-refresh-on-aws) - [Section 10](#10-use-of-ai-tools) |
+| vi | |[Section 7](#7-monthly-refresh-on-aws) - [Section 10](#10-use-of-ai-tools) |
 
 ## Evidence of idempotency
 
