@@ -30,7 +30,7 @@ Same snapshot, run twice, fresh database:
 
 | Run | Rows inserted/updated |
 |---|---|
-| 1 | [N] |
+| 1 | 849,999 |
 | 2 | **0** |
 
 Count chain: CSV 849,999 = Parquet 849,999 = rows read 849,999 = company [N] + rejected [N]
