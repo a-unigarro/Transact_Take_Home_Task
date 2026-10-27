@@ -1,24 +1,56 @@
 UK Companies House -> harmonized company table (AWS Glue / PySpark / PostgreSQL)
 =================================================================================
 
-1. WHAT THIS DOES
------------------
-End-to-end pipeline for the Companies House Free Company Data Product:
-
+0. AT A GLANCE
+--------------
   CSV (one split file) -> raw Parquet (S3 or local) -> Glue PySpark job -> PostgreSQL
                                                              |
                                                              +-> data quality report (JSON)
                                                              +-> registry.company_rejected
 
-The target is registry.company, keyed by (country_code, registry_id) so that other
-registries (e.g. France) can be added later.
+One command runs everything:   python run_pipeline.py --runs 2
 
-Snapshot used: BasicCompanyData-2026-10-01-part1_7 (849,999 rows, one of the seven
-split files).
+Snapshot: BasicCompanyData-2026-10-01-part1_7 (849,999 rows, one of seven split files).
+Target:   registry.company, keyed by (country_code, registry_id), ready for more countries.
+
+Where each requirement of the task is covered
+  (i)   Glue job (PySpark)          src/glue/transform_load.py, run on the official
+                                    AWS Glue 5.0 Docker image (section 4.1)
+  (ii)  CSV -> Parquet first        src/ingestion/ingest_data.py; the job reads the Parquet
+  (iii) Idempotent load             staging + INSERT ... ON CONFLICT (section 5)
+  (iv)  Spark JDBC -> PostgreSQL    jdbc_write() and run_sql() in transform_load.py
+  (v)   Data quality checks         report.json + registry.company_rejected (section 6)
+  (vi)  Monthly refresh / France    sections 7 and 8
+  Also: SIC -> NACE note (4.4), what I cut (9), AI tools used (10)
+
+Evidence for the idempotency claim (same snapshot, run twice, fresh database):
+  run 1: rows inserted/updated = [N]
+  run 2: rows inserted/updated = 0
+  count chain: CSV 849,999 = Parquet 849,999 = rows_read 849,999 = company [N] + rejected [N]
+
+
+1. SUGGESTED WALKTHROUGH (about 20 minutes)
+-------------------------------------------
+  1. (2 min)  This section and section 0: the flow and the requirement map.
+  2. (3 min)  Ingestion: src/download_source.py, src/ingestion/ingest_data.py.
+              Row counts are checked three times (CSV = Spark read = Parquet) and the
+              landing manifest is written only after the check passes.
+  3. (6 min)  The Glue job, src/glue/transform_load.py, in this order:
+              transform() -> split_rejects() -> dq_report() -> jdbc_write() -> upsert_sql().
+              Key points: country_code vs CountryOfOrigin, the legal form lookup,
+              deterministic duplicate removal, row reconciliation.
+  4. (3 min)  sql/001_schema.sql and the idempotency design (section 5). Live demo:
+              python run_pipeline.py --skip-download --skip-ingest --runs 2
+              and show "rows inserted/updated ... 0" on the second run.
+  5. (2 min)  Data quality: output/dq/snapshot_date=2026-10-01/report.json and the
+              rejected table (queries in section 11).
+  6. (3 min)  Sections 7 and 8: monthly refresh on AWS and what changes for France.
+  7. (1 min)  Section 9: what I cut and why.
 
 
 2. REPOSITORY LAYOUT
 --------------------
+run_pipeline.py                runs all steps in order (driver, DB, download, Parquet, job)
 settings.py                    configuration from .env (paths, AWS, snapshot date)
 src/download_source.py         download the zip, extract the CSV, write a local manifest
 src/ingestion/ingest_data.py   raw CSV -> Parquet (S3 or local), row counts verified
@@ -26,10 +58,11 @@ src/ingestion/storage.py       same calls for a local folder or an s3:// locatio
 src/ingestion/session.py       local Spark session for the ingestion step
 src/glue/transform_load.py     the Glue job (main deliverable)
 sql/001_schema.sql             company, company_staging, company_rejected
-docker-compose.yml             PostgreSQL, pgAdmin, and the official AWS Glue 5.0 image
+docker-compose.yml             PostgreSQL, the Glue 5.0 image, optional pgAdmin
 scripts/get_jdbc.py            downloads the PostgreSQL JDBC driver into ./jars
-pgadmin/servers.example.json   pgAdmin connection template
-output/dq/                     data quality reports (folder versioned, content git-ignored)
+pgadmin/servers.example.json   pgAdmin connection template (optional tool)
+output/dq/                     DQ reports (folder versioned, content git-ignored)
+output/logs/                   full Spark logs per run (git-ignored)
 
 Not included: the Terraform used to create the S3 bucket (any private bucket works).
 
@@ -38,48 +71,49 @@ Not included: the Terraform used to create the S3 bucket (any private bucket wor
 -------------
 Requirements: Docker, Python 3.11+, Java 17+ (only for the ingestion step on the host).
 
-  cp .env.example .env                                  # fill DB_*, SOURCE_NAME, AWS keys if using S3
-  cp pgadmin/servers.example.json pgadmin/servers.json  # user/db must match .env
+  cp .env.example .env            # fill DB_*, SOURCE_NAME, and AWS keys if using S3
   python -m venv env && source env/bin/activate
   pip install -r requirements.txt
-  python -m scripts.get_jdbc
-  chmod -R 777 output                                   # see notes below
-  docker compose up -d --wait db              
 
-  # 1) ingestion: CSV -> Parquet (local, or S3 if LANDING_ROOT=s3://bucket/prefix in .env)
-  python -m src.download_source
-  python -m src.ingestion.ingest_data
+  python run_pipeline.py --runs 2
 
-  # 2) Glue job. Run it twice to see the idempotency result.
+What it does:
+  1. downloads the JDBC driver into ./jars
+  2. starts PostgreSQL (waits until healthy) and makes output/ writable for the container
+  3. downloads and extracts the CSV, writes a manifest (row count, sha256)
+  4. converts the CSV to Parquet (local, or S3 if LANDING_ROOT=s3://bucket/prefix)
+  5. runs the Glue job in Docker, N times (--runs)
+
+Options: --skip-download, --skip-ingest (reuse existing files), --runs N.
+The screen shows only the key log lines; the full Spark log is in output/logs/.
+The DQ report is written to output/dq/snapshot_date=<date>/report.json.
+
+Run the Glue job by hand (landing path: s3://<bucket>/COUNTRY=UK/landing/snapshot_date=...
+or /home/hadoop/workspace/data/COUNTRY=UK/landing/snapshot_date=... for local):
   docker compose run --rm glue spark-submit \
     --jars /home/hadoop/workspace/jars/postgresql-42.7.4.jar \
-    src/glue/transform_load.py \
-    --SOURCE_PATH <landing path>
+    src/glue/transform_load.py --SOURCE_PATH <landing path>
+  (if you do this before run_pipeline.py has ever run: chmod -R 777 output)
 
-  <landing path> is either
-    s3://<bucket>/COUNTRY=UK/landing/snapshot_date=2026-10-01
-  or, for a fully local run,
-    /home/hadoop/workspace/data/COUNTRY=UK/landing/snapshot_date=2026-10-01
-
-  # Optional: pgAdmin UI to inspect the tables (http://localhost:8080)
+Optional, pgAdmin UI to inspect tables (http://localhost:8080, login admin@admin.com / admin;
+it asks for DB_PASSWORD the first time):
   cp pgadmin/servers.example.json pgadmin/servers.json   # user/db must match .env
   docker compose --profile manual up -d pgadmin
 
-Output: PostgreSQL schema "registry" and output/dq/snapshot_date=<date>/report.json.
-Use pgAdmin (or docker compose exec db psql) to inspect the tables.
+
+Local vs S3: If LANDING_ROOT is not defined, by default everything runs locally (CSV and Parquet under ./data) 
+and no AWS credentials are needed. Set LANDING_ROOT=s3://<bucket>/COUNTRY=UK/landing in .env
+to write the Parquet to S3 and have the Glue job read it from there.  
 
 Notes
-  - The DQ report is written by the container user (UID 10000) into ./output/dq.
-    Git does not store permissions, so run "chmod -R 777 output" once after cloning.
-    If you skip it, the job still loads the data, prints the report in the log and
-    shows a WARNING instead of writing report.json.
   - sql/ runs only when the database volume is created. After changing the DDL:
-    docker compose down -v && docker compose up -d --wait db
-  - pgAdmin asks for the database password the first time (admin@admin.com / admin by default).
+      docker compose down -v && docker compose up -d --wait db
   - AWS credentials: set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in .env. They are
     used by the ingestion step (host) and passed to the Glue container. Use a
     dedicated IAM user limited to the bucket (GetObject, PutObject, DeleteObject,
     ListBucket). Not needed for a fully local run.
+  - If the DQ report cannot be written (permissions), the job still loads the data,
+    prints the report in the log and shows a WARNING.
 
 
 4. DECISIONS
@@ -137,11 +171,6 @@ Approach: staging table + a single INSERT ... ON CONFLICT DO UPDATE.
   Duplicates inside the snapshot are removed in Spark before staging, with a total
   ordering on all business columns, so a re-run always keeps the same row.
 
-Evidence (same snapshot, run twice, on a fresh database):
-  run 1: rows inserted/updated = [N]
-  run 2: rows inserted/updated = 0
-  registry.company: [N] rows, [N] distinct keys
-
 Why this approach: it is atomic (one transaction), needs no extra infrastructure and
 works with plain Spark JDBC. Glue job bookmarks only track new files, not changed
 rows. Iceberg would add a catalog and a MERGE engine that a PostgreSQL target does
@@ -185,7 +214,6 @@ Results for this snapshot:
   rows read: 849,999   valid unique: [N]   rejected: [N] ([INVALID_ID n], [DUPLICATE_KEY n])
   highest null rates: [industry_code x%, ...]
   unmapped legal forms: [list or "none"]
-  count chain: CSV 849,999 = Parquet 849,999 = rows_read 849,999 = company [N] + rejected [N]
 
 Not done: failing the job when a threshold is exceeded (e.g. > 1% invalid ids).
 
@@ -211,7 +239,8 @@ Functions:
   3. DQ gate (Choice state on the report: stop and notify on critical failures)
   4. SNS notification with the DQ summary
   Retries with backoff on steps 1 and 2. Both are idempotent, so a retry or a manual
-  re-run for the same snapshot is safe.
+  re-run for the same snapshot is safe. run_pipeline.py is the local equivalent of
+  this state machine.
 
 Data Catalog: not needed by the job, which reads by S3 path. I would add a Glue
 Data Catalog table over the landing Parquet (partition projection on snapshot_date,
@@ -288,13 +317,52 @@ Planned time was 8-10 hours; left out on purpose:
   - No DQ summary table or view in PostgreSQL: the JSON report covers it.
   - The job runs on the Glue Docker image, not on the Glue service; Step Functions,
     RDS and Secrets Manager are described, not deployed.
-  - Container permissions handled with a documented chmod instead of user mapping.
+  - pgAdmin is an optional inspection tool, not part of the pipeline.
 
 
 10. USE OF AI TOOLS
 -------------------
 Claude (Anthropic) was used as a coding assistant for: the Docker Compose and pgAdmin
 setup, the structure of the Glue job, the upsert SQL, the data quality functions,
-debugging (AWS credentials and file permissions in the container), code review and
-drafting this README. I ran and verified the pipeline myself (including the double
-run showing 0 updates) and made the design decisions described above.
+run_pipeline.py, debugging (AWS credentials and file permissions in the container),
+code review and drafting this README. I ran and verified the pipeline myself
+(including the double run showing 0 updates) and made the design decisions described
+above.
+
+
+11. DEMO QUERIES
+----------------
+  docker compose exec db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "<SQL>"'
+
+  -- count chain: target + rejected = rows read
+  select (select count(*) from registry.company)          as target,
+         (select count(*) from registry.company_rejected) as rejected;
+
+  -- no duplicates
+  select count(*), count(distinct (country_code, registry_id)) from registry.company;
+
+  -- why rows were rejected
+  select reject_reason, count(*) from registry.company_rejected group by 1;
+
+  -- unmapped legal forms
+  select legal_form_label, count(*) from registry.company
+  where legal_form_code is null group by 1 order by 2 desc limit 10;
+
+  -- sample of harmonized rows
+  select * from registry.company limit 5;
+
+
+12. QUESTIONS I EXPECT (short answers)
+--------------------------------------
+  Why staging + upsert and not job bookmarks or Iceberg?
+    Section 5: atomic, no extra infrastructure, bookmarks do not detect changed rows.
+  Why is country_code not CountryOfOrigin?
+    Section 4.3: it must be a stable key part; origin is free text and can change.
+  What if the same snapshot is loaded twice, or a job dies halfway?
+    Run 2 updates 0 rows; the upsert is one transaction, so the target stays consistent.
+  What about companies that vanish from the registry?
+    Not handled (section 5, "where it breaks"); needs last-seen tracking.
+  How would this scale to 30M rows?
+    Section 8: Spark is fine; the JDBC load is the bottleneck (COPY, row hashes, Iceberg).
+  Why run Glue locally?
+    Section 4.1: same libraries, zero cost; the script is identical on the service.

@@ -51,6 +51,10 @@ services:
       - .:/home/hadoop/workspace
       - ${HOME}/.aws-docker:/home/hadoop/.aws:ro
 
+networks:
+  default:
+    name: uk_companies_network
+
 volumes:
   postgres_data:
   pgadmin_data:

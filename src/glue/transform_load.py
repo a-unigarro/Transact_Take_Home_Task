@@ -103,7 +103,7 @@ def transform(raw: DataFrame, snapshot_date: str) -> DataFrame:
         city.alias("city"),
         F.trim(F.col("CountryOfOrigin")).alias("country_of_origin"),    # raw value, kept as is
         F.to_date(F.lit(snapshot_date)).alias("source_last_updated"),
-        F.current_timestamp().alias("ingested_at"),
+        F.from_utc_timestamp(F.current_timestamp(), "Europe/Berlin").alias("ingested_at"),
     )
 
 
@@ -220,7 +220,7 @@ def main():
     jdbc_write(valid.select(*COLS), args, "registry.company_staging", mode="overwrite", truncate=True)
     print("rows inserted/updated in registry.company:", run_sql(spark, args, upsert_sql()))
 
-    write_dq(spark, args, report)
+    write_dq(args, report)
     if job:
         job.commit()
 
