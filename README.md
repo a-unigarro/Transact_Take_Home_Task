@@ -21,8 +21,8 @@ python run_pipeline.py --runs 2
 
 ## Where each requirement is covered
 
-| # | Requirement | Where | Details |
-|---|---|---|---|
+| # | Requirement | Where |
+|---|---|---|
 | i | Glue job (PySpark) | `src/glue/transform_load.py` |
 | ii | CSV → Parquet first | `src/ingestion/ingest_data.py` |
 | iii | Idempotent load | `transform_load.py`, `sql/001_schema.sql` |
