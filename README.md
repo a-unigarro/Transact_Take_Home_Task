@@ -147,64 +147,48 @@ docker compose --profile manual up -d pgadmin
 - **Credentials:** keys in `.env` (git-ignored) are injected into the container as environment variables.
 - **Versions:** ingestion runs PySpark on the host; the job runs on Spark 3.5.4 (Glue 5.0 image).
 
-
-### 4.2 Landing format
-
-Raw CSV is converted to Parquet first, as required. Row counts are checked three times:
-
-1. CSV records (Python `csv` module, written to a manifest at download time)
-2. Rows read by Spark
-3. Rows in the written Parquet
-
-The landing manifest (row count, columns, files) is written only after that check passes.
-
-### 4.3 Harmonized schema (changes to the draft)
+### 4.2 Harmonized schema 
 
 | Column | Decision |
 |---|---|
-| `country_code` | Registry jurisdiction (ISO `GB`), constant for this source, part of the primary key. **Not** `CountryOfOrigin`: that value is the company's origin, free text, and can change between snapshots (which would create duplicates) |
+| `country_code` |Constant for this source (UK), part of the primary key. **Not** `CountryOfOrigin`: that value is the company's origin, can change between snapshots, which would create duplicates. |
 | `country_of_origin` | New. Raw `CountryOfOrigin`, kept as is |
-| `legal_form_code`, `legal_form_label` | Companies House gives only a text category. A small lookup in the job maps it to a code. Unmapped categories keep their raw text as label, get a `NULL` code and are listed in the DQ report |
-| `industry_code` | UK SIC 2007, first SIC field only, digits only |
+| `legal_form_code`, `legal_form_label` | Companies House gives only a text category. The job maps it to a code. Unmapped categories keep their raw text as label, get a `NULL` code and are listed in the DQ report |
+| `industry_code` | UK SIC digits only |
 | `city` | Upper case, dots removed, whitespace collapsed (`St. Albans` = `ST ALBANS`) |
 | `source_last_updated` | Snapshot date in which the row last changed |
 | `ingested_at` | Timestamp of the run that last changed the row (see [section 5](#5-idempotent-load)) |
 
-### 4.4 SIC → NACE
+### 4.3 SIC → NACE
 
 UK SIC 2007 is aligned with NACE Rev. 2 at four digits; the fifth digit is a UK extension.
 
 - **Mapping:** keep the first four digits and format `NN.NN` (SIC `62012` → NACE `62.01`).
-- **Not materialized:** SIC is kept, as required.
-- **With more countries:** add `industry_code_system` (`SIC2007`, `NAF2`, ...) and a derived `nace_code` column.
 
 ## 5. Idempotent load
 
 **Approach:** staging table + a single `INSERT ... ON CONFLICT DO UPDATE`.
 
 1. Spark overwrites `registry.company_staging` (`truncate`, so the DDL types are kept).
-2. One SQL statement, in one transaction, upserts staging into `registry.company`:
+2. One SQL statement, in one transaction (atomic), upserts staging into `registry.company`:
 
    ```sql
    INSERT ... ON CONFLICT (country_code, registry_id) DO UPDATE SET ...
    WHERE (business columns) IS DISTINCT FROM (new business columns)
    ```
 
-3. The `WHERE` clause makes unchanged rows a no-op.
+3. The `WHERE` clause prevents unmodified rows from being updated.
 
-Duplicates inside the snapshot are removed in Spark before staging, with a total ordering on all business columns, so a re-run always keeps the same row.
+Duplicates inside the snapshot are removed in Spark before staging.
 
-**Why this approach:** it is atomic (one transaction), needs no extra infrastructure and works with plain Spark JDBC. Glue job bookmarks only track new files, not changed rows. Iceberg would add a catalog and a MERGE engine that a PostgreSQL target does not need.
+**Why this approach:** it is atomic, needs no extra infrastructure and works with plain Spark JDBC. Glue job bookmarks only track new files, not changed rows. Iceberg would need to add a catalog and a MERGE engine.
 
 ### Where it breaks
 
 - **Concurrent runs:** they share the staging table and can overwrite each other. Needs an advisory lock or a per-run staging table.
-- **Disappearing companies:** the upsert never deletes, so companies missing from a snapshot stay in the table. Needs a "last seen snapshot" column and a soft delete.
-- **`ingested_at` semantics:** `ingested_at` and `source_last_updated` are excluded from the change comparison on purpose (otherwise each monthly run would rewrite every row), so `ingested_at` is not "time of the last run". A `load_audit` table (run id, snapshot, counts) would hold that.
+- **Disappearing companies:** the upsert never deletes, so companies missing from a snapshot stay in the table.
 - **Stricter rules later:** tightening a validation rule does not remove rows loaded earlier under a looser rule (same reason: no deletes). Recreate the table or add a cleanup step.
-- **Rejected rows:** replaced with delete + append in two steps; if the job fails in between, a re-run fixes it.
 - **Volume:** JDBC batch inserts and a single-statement upsert are fine for ~850k rows, not for tens of millions (see [section 8](#8-what-changes-for-france-sirene-insee)).
-- **Failure between staging and upsert:** the target is untouched.
 
 ## 6. Data quality
 
@@ -214,7 +198,6 @@ Computed in the job on the transformed data, before filtering. Output: `output/d
 
 - Rows read, rows valid and unique, rows rejected by reason
 - Null rate per harmonized column
-- `founding_date` in the future
 - Top 20 unmapped legal form categories
 - Reconciliation: rows read = valid + rejected, otherwise the job fails
 
@@ -229,21 +212,9 @@ Computed in the job on the transformed data, before filtering. Output: `output/d
 
 They are replaced per snapshot, so re-runs do not duplicate them.
 
-**Results for this snapshot**
-
-| Metric | Value |
-|---|---|
-| Rows read | 849,999 |
-| Valid unique | [N] |
-| Rejected | [N] (`INVALID_ID` [n], `DUPLICATE_KEY` [n]) |
-| Highest null rates | [industry_code x%, ...] |
-| Unmapped legal forms | [list or "none"] |
-
-**Not done:** failing the job when a threshold is exceeded (e.g. more than 1% invalid ids).
-
 ## 7. Monthly refresh on AWS
 
-Companies House publishes a new snapshot at the start of each month, as seven split files (about 5-6 million companies in total). The refresh reads all parts of one snapshot.
+Companies House publishes a new snapshot at the start of each month (about 5-6 million companies in total). 
 
 ### S3 layout
 
@@ -256,7 +227,7 @@ s3://<bucket>/COUNTRY=UK/landing/snapshot_date=YYYY-MM-DD/   raw Parquet + manif
 
 - In this repo only the Parquet goes to S3; zip and CSV stay on local disk. In AWS the download step would write the zip files to S3.
 - The monthly job reads exactly one partition, and old snapshots are kept for reprocessing.
-- Lifecycle rule: zip to Glacier or expire after N months; Parquet kept.
+- Lifecycle rule: expire after N months; Parquet kept.
 
 ### Orchestration
 
