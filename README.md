@@ -56,7 +56,7 @@ Supporting files:
 | `pgadmin/servers.example.json` | pgAdmin connection template (optional tool) |
 | `output/dq/`, `output/logs/` | DQ reports (folder versioned) and full Spark logs (content git-ignored) |
 
-Not included: the Terraform used to create the S3 bucket (any private bucket works).
+any s3 private bucket works.
 
 ## 2. How to run
 
