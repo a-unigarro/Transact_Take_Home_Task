@@ -33,7 +33,7 @@ Same snapshot, run twice, fresh database:
 | 1 | 849,999 |
 | 2 | **0** |
 
-Count chain: CSV 849,999 = Parquet 849,999 = rows read 849,999 = company [N] + rejected [N]
+Count chain: CSV 849,999 = Parquet 849,999 = rows read 849,999 = company + rejected
 
 # 1. Repository tour
 
