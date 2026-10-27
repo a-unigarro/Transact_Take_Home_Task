@@ -56,7 +56,6 @@ Supporting files:
 | `pgadmin/servers.example.json` | pgAdmin connection template (optional tool) |
 | `output/dq/`, `output/logs/` | DQ reports (folder versioned) and full Spark logs (content git-ignored) |
 
-any s3 private bucket works.
 
 ## 2. How to run
 
