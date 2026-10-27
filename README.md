@@ -258,12 +258,10 @@ Rough estimates for eu-central-1 :
 
 ## 8. What changes for France (SIRENE, INSEE)
 
-**Source:** `StockUniteLegale` (~30M rows) + `StockEtablissement` (addresses, ~40M rows).
-
 ### Data model differences
 
-- **Identifier:** SIREN, 9 digits, Luhn check digit (SIRET = 14 digits identifies establishments). The ID validity rule becomes per-country configuration.
-- **Legal form:** INSEE "catégorie juridique", a numeric hierarchical code (up to 4 digits). It needs its own lookup, mapped to the common `legal_form_code`. Lookups move from a dict in the job to versioned per-country reference tables (CSV in the repo or a PostgreSQL table). Unmapped codes still feed the DQ report.
+- **Identifier:** The ID validity rule becomes per-country configuration.
+- **Legal form:** INSEE "catégorie juridique", is a numeric, hierarchical code (up to 4 digits). To process it, we need a dedicated lookup table that maps these values to the standard `legal_form_code`. Rather than keeping these lookup dicts inside the job itself, they will now be stored in versioned, per-country reference tables (CSV in the repo or a PostgreSQL table). Unmapped codes still feed the DQ report.
 - **Activity:** NAF rév. 2 (e.g. `62.01Z`), which is NACE Rev. 2 plus a French letter; conversion to NACE is dropping the letter. Same idea as UK SIC (drop the fifth digit). Add `industry_code_system` and `nace_code` so both countries share one scale.
 - **Address:** it belongs to the headquarters establishment (`etablissementSiege = true`), so a join with `StockEtablissement` is needed before loading.
 - **Name:** `denominationUniteLegale`; sole traders use name / first-name fields.
