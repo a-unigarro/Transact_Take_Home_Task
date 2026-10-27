@@ -23,16 +23,16 @@ python run_pipeline.py --runs 2
 
 | # | Requirement | Where | Details |
 |---|---|---|---|
-| i | Glue job (PySpark) | `src/glue/transform_load.py` | Runs on the official AWS Glue 5.0 Docker image ([4.1](#41-glue-runtime)) |
-| ii | CSV → Parquet first | `src/ingestion/ingest_data.py` | The job reads the Parquet, not the CSV |
-| iii | Idempotent load | `transform_load.py`, `sql/001_schema.sql` | Staging + `INSERT ... ON CONFLICT` ([5](#5-idempotent-load)) |
-| iv | Spark JDBC → PostgreSQL | `jdbc_write()`, `run_sql()` | Both in `transform_load.py` |
-| v | Data quality checks | `output/dq/.../report.json` | Plus `registry.company_rejected` ([6](#6-data-quality)) |
-| vi-a | Monthly refresh on AWS | [Section 7](#7-monthly-refresh-on-aws) | S3 layout, orchestration, cost |
-| vi-b | France (SIRENE) | [Section 8](#8-what-changes-for-france-sirene-insee) | Legal forms, NAF, 30M rows |
-| | SIC → NACE note | [4.4](#44-sic--nace) | |
-| | What I cut | [Section 9](#9-what-i-cut-and-why) | |
-| | AI tools used | [Section 10](#10-use-of-ai-tools) | |
+| i | Glue job (PySpark) | `src/glue/transform_load.py` |
+| ii | CSV → Parquet first | `src/ingestion/ingest_data.py` |
+| iii | Idempotent load | `transform_load.py`, `sql/001_schema.sql` |
+| iv | Spark JDBC → PostgreSQL | `jdbc_write()`, `run_sql()` |
+| v | Data quality checks | `output/dq/.../report.json` |
+| vi-a | Monthly refresh on AWS | [Section 7](#7-monthly-refresh-on-aws) |
+| vi-b | France (SIRENE) | [Section 8](#8-what-changes-for-france-sirene-insee) |
+| | SIC → NACE note | [4.4](#44-sic--nace) | 
+| | What I cut | [Section 9](#9-what-i-cut-and-why) |
+| | AI tools used | [Section 10](#10-use-of-ai-tools) |
 
 ## Evidence of idempotency
 
