@@ -54,6 +54,7 @@ services:
 networks:
   default:
     name: uk_companies_network
+    external: true
 
 volumes:
   postgres_data:

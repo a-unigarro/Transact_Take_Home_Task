@@ -10,12 +10,6 @@ CSV (one split file) → raw Parquet (S3 or local) → Glue PySpark job → Post
                                                         └─→ registry.company_rejected
 ```
 
-Run everything with one command:
-
-```bash
-python run_pipeline.py --runs 2
-```
-
 - **Snapshot:** `BasicCompanyData-2026-10-01-part1_7` (849,999 rows, one of seven split files)
 - **Target:** `registry.company`, keyed by `(country_code, registry_id)`, ready for more countries
 
@@ -73,13 +67,19 @@ Not included: the Terraform used to create the S3 bucket (any private bucket wor
 
 ## 2. How to run
 
-**Requirements:** Docker, Python 3.11+, Java 17+ (only for the ingestion step on the host).
+**Requirements:**
+
+- Docker
+- Python 3.11+
+- Java 17+ (only for the ingestion step on the host, which runs PySpark). Install it with your package manager, for example `sudo apt install openjdk-17-jre`, `brew install openjdk@17`, or `conda install -c conda-forge openjdk=17` if you use conda. Check with `java -version`.
 
 ```bash
 cp .env.example .env            # fill DB_*, SOURCE_NAME, and AWS keys if using S3
 python -m venv env && source env/bin/activate
 pip install -r requirements.txt
-
+```
+Run everything with one command:
+```bash
 python run_pipeline.py --runs 2
 ```
 
@@ -304,7 +304,7 @@ Planned time was 8-10 hours; left out on purpose:
 
 ## 10. Use of AI tools
 
-Claude (Anthropic) was used as a coding assistant for:
+Claude was used as a coding assistant for:
 
 - Docker Compose and pgAdmin setup
 - Structure of the Glue job and the upsert SQL
@@ -314,51 +314,3 @@ Claude (Anthropic) was used as a coding assistant for:
 
 I ran and verified the pipeline myself (including the double run showing 0 updates) and made the design decisions described above.
 
-## 11. Demo queries
-
-Run them with:
-
-```bash
-docker compose exec db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "<SQL>"'
-```
-
-Or paste them into pgAdmin's Query Tool.
-
-```sql
--- count chain: target + rejected = rows read
-select (select count(*) from registry.company)          as target,
-       (select count(*) from registry.company_rejected) as rejected;
-
--- no duplicates
-select count(*), count(distinct (country_code, registry_id)) from registry.company;
-
--- why rows were rejected
-select reject_reason, count(*) from registry.company_rejected group by 1;
-
--- unmapped legal forms
-select legal_form_label, count(*) from registry.company
-where legal_form_code is null group by 1 order by 2 desc limit 10;
-
--- sample of harmonized rows
-select * from registry.company limit 5;
-```
-
-## 12. Questions I expect
-
-**Why staging + upsert and not job bookmarks or Iceberg?**
-Atomic, no extra infrastructure, and bookmarks do not detect changed rows ([section 5](#5-idempotent-load)).
-
-**Why is `country_code` not `CountryOfOrigin`?**
-It must be a stable part of the key; origin is free text and can change ([4.3](#43-harmonized-schema-changes-to-the-draft)).
-
-**What if the same snapshot is loaded twice, or a job dies halfway?**
-Run 2 updates 0 rows. The upsert is one transaction, so the target stays consistent.
-
-**What about companies that vanish from the registry?**
-Not handled; needs last-seen tracking ([section 5](#where-it-breaks)).
-
-**How would this scale to 30M rows?**
-Spark is fine; the JDBC load is the bottleneck (`COPY`, row hashes, Iceberg). See [section 8](#8-what-changes-for-france-sirene-insee).
-
-**Why run Glue locally?**
-Same libraries, zero cost; the script is identical on the service ([4.1](#41-glue-runtime)).
