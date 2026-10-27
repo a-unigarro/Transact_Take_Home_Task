@@ -41,7 +41,6 @@ Core files in the order I suggest reading them (about 20 minutes).
 
 | Path | What it does | Point out |
 |---|---|---|
-| This README | Flow and requirement map | The table above |
 | `src/download_source.py`, `src/ingestion/ingest_data.py` | Download, then CSV → Parquet (S3 or local) | Row counts checked three times (CSV = Spark read = Parquet). Manifest written only after the check passes |
 | `src/glue/transform_load.py` | **The Glue job (main deliverable)** | Read in this order: `transform()` → `split_rejects()` → `dq_report()` → `jdbc_write()` → `upsert_sql()`. Key points: `country_code` vs `CountryOfOrigin`, legal form lookup, deterministic duplicate removal, row reconciliation |
 | `sql/001_schema.sql` | `company`, `company_staging`, `company_rejected` | [Idempotency design](#4-idempotent-load). Live demo: `python run_pipeline.py --skip-download --skip-ingest --runs 2`, second run prints `0` |
