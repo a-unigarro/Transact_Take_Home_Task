@@ -8,8 +8,7 @@
       "MaintenanceDB": "companies_registry",
       "Username": "user",
       "SSLMode": "prefer",
-      "PassFile": "/var/lib/pgadmin/pgpass",
-      "Password": "password"
+      "PassFile": "/var/lib/pgadmin/pgpass"
     }
   }
 }
