@@ -262,23 +262,16 @@ Rough estimates for eu-central-1 :
 
 - **Identifier:** The ID validity rule becomes per-country configuration.
 - **Legal form:** INSEE "catégorie juridique", is a numeric, hierarchical code (up to 4 digits). To process it, we need a dedicated lookup table that maps these values to the standard `legal_form_code`. Rather than keeping these lookup dicts inside the job itself, they will now be stored in versioned, per-country reference tables (CSV in the repo or a PostgreSQL table). Unmapped codes still feed the DQ report.
-- **Activity:** NAF rév. 2 (e.g. `62.01Z`), which is NACE Rev. 2 plus a French letter; conversion to NACE is dropping the letter. Same idea as UK SIC (drop the fifth digit). Add `industry_code_system` and `nace_code` so both countries share one scale.
-- **Address:** it belongs to the headquarters establishment (`etablissementSiege = true`), so a join with `StockEtablissement` is needed before loading.
-- **Name:** `denominationUniteLegale`; sole traders use name / first-name fields.
+- **Activity:** NAF rév. 2 (e.g. `62.01Z`), which is NACE Rev. 2 plus a letter. Conversion to NACE is dropping the letter. Same idea as UK SIC (drop the fifth digit). 
 - **Status:** state codes (A active, C ceased) mapped to a harmonized status.
-- **Non-diffusible units** (`statutDiffusionUniteLegale`): data is masked; needs a documented privacy rule.
 - **`source_last_updated`:** each row has its own last-processing date, so it comes from the data and not from the snapshot date.
 - **Format:** ISO dates and a different delimiter / encoding, so read options become per-country.
 
 ### Scaling (30M rows vs ~850k)
 
-- **Ingestion:** count with Spark, not with Python's `csv` module (as `download_source.py` does today); write several Parquet files instead of `coalesce(1)`.
+- **Ingestion:** count with Spark, not with Python's `csv` module (as `download_source.py` does ). Write several Parquet files instead of `coalesce(1)`.
 - **Transform:** Spark handles 30M rows on a few DPUs. The DQ step should use one aggregation pass instead of several `count()` calls.
-- **Load:** JDBC batch inserts become the bottleneck. Options:
-  - (a) stage only new or changed rows by comparing a row hash with the target
-  - (b) export to S3 and use `COPY` (RDS `aws_s3` extension)
-  - (c) list-partition the target by `country_code` and upsert in key ranges
-  - At this size, Iceberg on S3 with MERGE (queried via Athena) is a better target than PostgreSQL.
+- **Load:** this is the step that breaks first. Today Spark inserts every row into the staging table over JDBC, and one SQL statement then upserts the whole table in a single transaction. At 30M rows that means slow batched inserts, one very long transaction (locks, large write-ahead log), and re-sending every row each month even though most rows did not change. The load would need to move the data in bulk and touch only new or changed rows. At this size, PostgreSQL may also stop being the right target: a columnar table on S3 queried with Athena would suit analytical use better.
 - **Code structure:** one module per country (read, rename, clean) producing the common schema; shared code for harmonization, loading and DQ.
 
 ## 9. What I cut and why
