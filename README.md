@@ -274,30 +274,23 @@ Rough estimates for eu-central-1 :
 - **Load:** this is the step that breaks first. Today Spark inserts every row into the staging table over JDBC, and one SQL statement then upserts the whole table in a single transaction. At 30M rows that means slow batched inserts, one very long transaction, and re-sending every row each month even though most rows did not change. The load would need to move the data in bulk and touch only new or changed rows. 
 - **Code structure:** one module per country (read, rename, clean) producing the common schema. Shared code for harmonization, loading and DQ.
 
-## 9. What I cut and why
+## 9. What I cut 
 
-Planned time was 8-10 hours; left out on purpose:
-
-- Only one split file of the snapshot (allowed by the task)
-- Only the first SIC code (`SicText_1`), not `SicText_2..4`
-- The legal form lookup covers the main categories; the rest are reported by the DQ step instead of being guessed
+- The legal form lookup covers the main categories, the rest are reported by the DQ step instead of being guessed
 - No mapping of `CountryOfOrigin` to ISO codes (kept raw), and no status harmonization
-- Basic city normalization (case, dots, spaces); no fuzzy matching or gazetteer
-- No deletion handling or history (SCD); the table holds the latest state
-- No DQ thresholds that fail the job (only the row reconciliation); no automated tests or CI
-- No DQ summary table or view in PostgreSQL: the JSON report covers it
-- The job runs on the Glue Docker image, not on the Glue service; Step Functions, RDS and Secrets Manager are described, not deployed
-- pgAdmin is an optional inspection tool, not part of the pipeline
+- No deletion handling or history. The table holds the latest state
+- No automated tests or CI
+- The job runs on the Glue Docker image, not on the Glue service
+
 
 ## 10. Use of AI tools
 
 Claude was used as a coding assistant for:
 
 - Docker Compose and pgAdmin setup
-- Structure of the Glue job and the upsert SQL
-- The data quality functions and `run_pipeline.py`
+- Structure of the Glue job 
 - Debugging (AWS credentials and file permissions in the container)
 - Code review and drafting this README
 
-I ran and verified the pipeline myself (including the double run showing 0 updates) and made the design decisions described above.
+
 
