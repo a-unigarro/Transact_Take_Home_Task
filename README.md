@@ -271,8 +271,8 @@ Rough estimates for eu-central-1 :
 
 - **Ingestion:** count with Spark, not with Python's `csv` module (as `download_source.py` does ). Write several Parquet files instead of `coalesce(1)`.
 - **Transform:** Spark handles 30M rows on a few DPUs. The DQ step should use one aggregation pass instead of several `count()` calls.
-- **Load:** this is the step that breaks first. Today Spark inserts every row into the staging table over JDBC, and one SQL statement then upserts the whole table in a single transaction. At 30M rows that means slow batched inserts, one very long transaction (locks, large write-ahead log), and re-sending every row each month even though most rows did not change. The load would need to move the data in bulk and touch only new or changed rows. At this size, PostgreSQL may also stop being the right target: a columnar table on S3 queried with Athena would suit analytical use better.
-- **Code structure:** one module per country (read, rename, clean) producing the common schema; shared code for harmonization, loading and DQ.
+- **Load:** this is the step that breaks first. Today Spark inserts every row into the staging table over JDBC, and one SQL statement then upserts the whole table in a single transaction. At 30M rows that means slow batched inserts, one very long transaction, and re-sending every row each month even though most rows did not change. The load would need to move the data in bulk and touch only new or changed rows. 
+- **Code structure:** one module per country (read, rename, clean) producing the common schema. Shared code for harmonization, loading and DQ.
 
 ## 9. What I cut and why
 
