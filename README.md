@@ -226,9 +226,9 @@ s3://<bucket>/COUNTRY=UK/landing/snapshot_date=YYYY-MM-DD/   raw Parquet + manif
 EventBridge Scheduler (monthly, a few days after the 1st) → Step Functions:
 
 1. **Download + ingest:** a Python shell job (or Lambda, for the download only)
-2. **`transform_load`:** An AWS Glue Spark job that accepts `SOURCE_PATH` / `SNAPSHOT_DATE` as parameters.
-3. **DQ gate:** A Choice state that evaluates the report. It halts execution and sends a notification if critical failures are detected.
-4. **Notification:** Data Quality summary sent via Amazon SNS
+2. **`transform_load`:** an AWS Glue Spark job that accepts `SOURCE_PATH` / `SNAPSHOT_DATE` as parameters.
+3. **DQ gate:** a Choice state that evaluates the report. It halts execution and sends a notification if critical failures are detected.
+4. **Notification:** data Quality summary sent via Amazon SNS
 
 Retries with backoff on steps 1 and 2. Both are idempotent, so a retry or a manual re-run for the same snapshot is safe. `run_pipeline.py` is the local equivalent of this state machine.
 
