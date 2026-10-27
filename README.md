@@ -2,7 +2,7 @@
 
 AWS Glue (PySpark) → PostgreSQL, built for the transact.digital data engineer take-home task.
 
-## 1. At a glance
+# 1. At a glance
 
 ```text
 CSV (one split file) → raw Parquet (S3 or local) → Glue PySpark job → PostgreSQL
@@ -57,7 +57,7 @@ Supporting files:
 | `output/dq/`, `output/logs/` | DQ reports (folder versioned) and full Spark logs (content git-ignored) |
 
 
-## 3. How to run
+# 3. How to run
 
 **Requirements:**
 
@@ -128,7 +128,7 @@ The screen shows only the key log lines. The full Spark log is in `output/logs/`
 - **AWS credentials:** set `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` in `.env`. They are used by the ingestion step (host) and passed to the Glue container. Use a dedicated IAM user limited to the bucket (`GetObject`, `PutObject`, `DeleteObject`, `ListBucket`).
 - If the DQ report cannot be written (permissions), the job still loads the data, prints the report in the log and shows a `WARNING`.
 
-## 4. Decisions
+# 4. Decisions
 
 ### 4.1 Glue runtime
 
@@ -157,7 +157,7 @@ UK SIC 2007 is aligned with NACE Rev. 2 at four digits. The fifth digit is a UK 
 
 - **Mapping:** keep the first four digits and format `NN.NN` (SIC `62012` → NACE `62.01`).
 
-## 5. Idempotent load
+# 5. Idempotent load
 
 **Approach:** staging table + a single `INSERT ... ON CONFLICT DO UPDATE`.
 
@@ -182,7 +182,7 @@ Duplicates inside the snapshot are removed in Spark before staging.
 - **Stricter rules later:** tightening a validation rule does not remove rows loaded earlier under a looser rule (same reason: no deletes). Recreate the table or add a cleanup step.
 - **Volume:** JDBC batch inserts and a single-statement upsert are fine for ~850k rows, not for millions.
 
-## 6. Data quality
+# 6. Data quality
 
 Computed in the job on the transformed data, before filtering. Output: `output/dq/snapshot_date=<date>/report.json`, also printed in the log.
 
@@ -204,7 +204,7 @@ Computed in the job on the transformed data, before filtering. Output: `output/d
 
 They are replaced per snapshot, so re-runs do not duplicate them.
 
-## 7. Monthly refresh on AWS
+# 7. Monthly refresh on AWS
 
 Companies House publishes a new snapshot at the start of each month (about 5-6 million companies in total). 
 
@@ -248,7 +248,7 @@ Rough estimates for eu-central-1 :
 | Managed PostgreSQL (small instance + ~20 GB storage) | ~25 EUR/month, the dominant cost. It is the only component that runs all month|
 
 
-## 8. What changes for France (SIRENE, INSEE)
+# 8. What changes for France (SIRENE, INSEE)
 
 ### Data model differences
 
@@ -266,7 +266,7 @@ Rough estimates for eu-central-1 :
 - **Load:** this is the step that breaks first. Today Spark inserts every row into the staging table over JDBC, and one SQL statement then upserts the whole table in a single transaction. At 30M rows that means slow batched inserts, one very long transaction, and re-sending every row each month even though most rows did not change. The load would need to move the data in bulk and touch only new or changed rows. 
 - **Code structure:** one module per country (read, rename, clean) producing the common schema. Shared code for harmonization, loading and DQ.
 
-## 9. What I cut 
+# 9. What I cut 
 
 - The legal form lookup covers the main categories, the rest are reported by the DQ step instead of being guessed
 - No mapping of `CountryOfOrigin` to ISO codes (kept raw), and no status harmonization
@@ -275,7 +275,7 @@ Rough estimates for eu-central-1 :
 - The job runs on the Glue Docker image, not on the Glue service
 
 
-## 10. Use of AI tools
+# 10. Use of AI tools
 
 Claude was used as a coding assistant for:
 
