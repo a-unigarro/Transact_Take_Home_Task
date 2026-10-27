@@ -75,24 +75,6 @@ Run everything with one command:
 python run_pipeline.py --runs 2
 ```
 
-### What the script does
-
-1. Downloads the JDBC driver into `./jars`.
-2. Starts PostgreSQL (waits until healthy) and makes `output/` writable for the container user.
-3. Downloads and extracts the CSV, and writes a manifest (row count, sha256).
-4. Converts the CSV to Parquet: local by default, or S3 if `LANDING_ROOT=s3://bucket/prefix` is set in `.env`.
-5. Runs the Glue job in Docker, N times (`--runs`).
-
-### Options
-
-| Option | Effect |
-|---|---|
-| `--skip-download` | Reuse the existing CSV and manifest |
-| `--skip-ingest` | Reuse the existing Parquet |
-| `--runs N` | Run the Glue job N times |
-
-The screen shows only the key log lines. The full Spark log is in `output/logs/`, and the DQ report in `output/dq/snapshot_date=<date>/report.json`.
-
 ### Fully local run
 
 Leave `LANDING_ROOT` unset. The Parquet goes to `data/COUNTRY=UK/landing/snapshot_date=<date>/` and no AWS keys are needed. If you set a local `LANDING_ROOT` or `DATA_DIR`, it must be inside the project folder, because the container only sees the mounted project.
@@ -120,6 +102,24 @@ Only for inspecting tables. Open http://localhost:8080 (login `admin@admin.com` 
 cp pgadmin/servers.example.json pgadmin/servers.json   # user/db must match .env
 docker compose --profile manual up -d pgadmin
 ```
+
+### What the script does
+
+1. Downloads the JDBC driver into `./jars`.
+2. Starts PostgreSQL (waits until healthy) and makes `output/` writable for the container user.
+3. Downloads and extracts the CSV, and writes a manifest (row count, sha256).
+4. Converts the CSV to Parquet: local by default, or S3 if `LANDING_ROOT=s3://bucket/prefix` is set in `.env`.
+5. Runs the Glue job in Docker, N times (`--runs`).
+
+### Options
+
+| Option | Effect |
+|---|---|
+| `--skip-download` | Reuse the existing CSV and manifest |
+| `--skip-ingest` | Reuse the existing Parquet |
+| `--runs N` | Run the Glue job N times |
+
+The screen shows only the key log lines. The full Spark log is in `output/logs/`, and the DQ report in `output/dq/snapshot_date=<date>/report.json`.
 
 ### Notes
 
