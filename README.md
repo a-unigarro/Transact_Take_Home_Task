@@ -233,7 +233,7 @@ s3://<bucket>/COUNTRY=UK/landing/snapshot_date=YYYY-MM-DD/   raw Parquet + manif
 
 EventBridge Scheduler (monthly, a few days after the 1st) → Step Functions:
 
-1. **Download + ingest:** Glue Python shell job (Lambda is too small for the full set)
+1. **Download + ingest:** a Python shell job (or Lambda, for the download only)
 2. **`transform_load`:** Glue Spark job, parameters `SOURCE_PATH` / `SNAPSHOT_DATE`
 3. **DQ gate:** Choice state on the report; stop and notify on critical failures
 4. **Notification:** SNS with the DQ summary
@@ -242,23 +242,19 @@ Retries with backoff on steps 1 and 2. Both are idempotent, so a retry or a manu
 
 ### Data Catalog
 
-Not needed by the job, which reads by S3 path. I would add a Glue Data Catalog table over the landing Parquet (partition projection on `snapshot_date`, no crawler) only so analysts can query raw snapshots in Athena and see the schema. A crawler is unnecessary cost for a stable schema.
-
-### Database and secrets
-
-PostgreSQL on RDS in a private subnet. The Glue job uses a Glue Connection (VPC) and reads credentials from Secrets Manager. Locally the credentials are job parameters, which is not acceptable in production (job arguments are visible in the console). An S3 gateway endpoint avoids NAT costs.
+Not needed by the job, which reads by S3 path. It would be better to a Glue Data Catalog table over the landing Parquet (partition projection on `snapshot_date`) only so analysts can query raw snapshots in Athena and see the schema. 
 
 ### Cost
 
-Rough estimates for eu-central-1, to be checked against the AWS pricing page:
+Rough estimates for eu-central-1 :
 
 | Item | Estimate |
 |---|---|
 | Glue Spark job | ~2-5 DPU for ~10-15 min per month, below ~1 EUR per run |
 | Step Functions, EventBridge, SNS | Cents |
 | S3 | A few GB per snapshot, cents per month |
-| RDS `db.t4g.micro/small` | ~15-25 EUR/month, the dominant cost; could be stopped between runs if only used for the monthly load |
-| Local development | 0 EUR for compute (Docker); S3 only for the landing data |
+| Managed PostgreSQL (small instance + ~20 GB storage) | ~25 EUR/month, the dominant cost. It is the only component that runs all month|
+
 
 ## 8. What changes for France (SIRENE, INSEE)
 
