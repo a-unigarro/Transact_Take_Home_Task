@@ -2,7 +2,7 @@
 
 AWS Glue (PySpark) → PostgreSQL, built for the transact.digital data engineer take-home task.
 
-## At a glance
+## 1. At a glance
 
 ```text
 CSV (one split file) → raw Parquet (S3 or local) → Glue PySpark job → PostgreSQL
@@ -35,7 +35,7 @@ Same snapshot, run twice, fresh database:
 
 Count chain: CSV 849,999 = Parquet 849,999 = rows read 849,999 = company + rejected
 
-# 1. Repository tour
+# 2. Repository tour
 
 | Path | What it does | Point out |
 |---|---|---|
@@ -57,7 +57,7 @@ Supporting files:
 | `output/dq/`, `output/logs/` | DQ reports (folder versioned) and full Spark logs (content git-ignored) |
 
 
-## 2. How to run
+## 3. How to run
 
 **Requirements:**
 
