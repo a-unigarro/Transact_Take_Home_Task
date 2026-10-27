@@ -234,7 +234,7 @@ Retries with backoff on steps 1 and 2. Both are idempotent, so a retry or a manu
 
 ### Data Catalog
 
-Not needed by the job, which reads by S3 path. It would be better to a Glue Data Catalog table over the landing Parquet (partition projection on `snapshot_date`) only so analysts can query raw snapshots in Athena and see the schema. 
+Not needed by the job, which reads directly from S3 paths. It would be better to create a Glue Data Catalog table over the landing Parquet (enabling partition projection on `snapshot_date`) only so analysts can query raw snapshots in Athena and view the schema.
 
 ### Cost
 
