@@ -135,7 +135,7 @@ docker compose --profile manual up -d pgadmin
 **Choice:** the official AWS Glue 5.0 Docker image, run locally, instead of deploying the job to the Glue service in my own AWS account. Storage is a separate choice: the Parquet lives in my S3 bucket, and the job reads it directly.
 
 - **Why local:** no Glue billing, fast iteration, and the same Spark 3.5 / `awsglue` libraries as the service.
-- **Database:** the task allows a local Docker Postgres. A Glue job in AWS could not reach it without a VPC connection and an RDS instance, so running Glue in AWS would have added cost and setup. S3 access is real (my bucket, IAM keys). Only compute and database are local.
+- **Database:** A Glue job in AWS could not reach it without a VPC connection and an RDS instance, so running Glue in AWS would have added cost and setup. S3 access is real (my bucket, IAM keys). Only compute and database are local.
 - **Credentials:** keys in `.env` (git-ignored) are injected into the container as environment variables.
 - **Versions:** ingestion runs PySpark on the host. The job runs on Spark 3.5.4 (Glue 5.0 image).
 
@@ -143,8 +143,8 @@ docker compose --profile manual up -d pgadmin
 
 | Column | Decision |
 |---|---|
-| `country_code` |Constant for this source (UK), part of the primary key. **Not** `CountryOfOrigin`: that value is the company's origin, can change between snapshots, which would create duplicates. |
-| `country_of_origin` | New. Raw `CountryOfOrigin`, kept as is |
+| `country_code` |Constant for this source (UK), part of the primary key. **Not** `CountryOfOrigin`. |
+| `country_of_origin` | Raw `CountryOfOrigin`, kept as is |
 | `legal_form_code`, `legal_form_label` | Companies House gives only a text category. The job maps it to a code. Unmapped categories keep their raw text as label, get a `NULL` code and are listed in the DQ report |
 | `industry_code` | UK SIC digits only |
 | `city` | Upper case, dots removed, whitespace collapsed (`St. Albans` = `ST ALBANS`) |
@@ -173,14 +173,14 @@ UK SIC 2007 is aligned with NACE Rev. 2 at four digits. The fifth digit is a UK 
 
 Duplicates inside the snapshot are removed in Spark before staging.
 
-**Why this approach:** it is atomic, needs no extra infrastructure and works with plain Spark JDBC. Glue job bookmarks only track new files, not changed rows. Iceberg would need to add a catalog and a MERGE engine.
+**Why this approach:** it is atomic, needs no extra infrastructure and works with plain Spark JDBC. Glue job bookmarks only track new files, not changed rows. Iceberg requires the integration of a catalog alongside an engine capable of handling MERGE operations.
 
 ### Where it breaks
 
 - **Concurrent runs:** they share the staging table and can overwrite each other. Needs an advisory lock or a per-run staging table.
 - **Disappearing companies:** the upsert never deletes, so companies missing from a snapshot stay in the table.
 - **Stricter rules later:** tightening a validation rule does not remove rows loaded earlier under a looser rule (same reason: no deletes). Recreate the table or add a cleanup step.
-- **Volume:** JDBC batch inserts and a single-statement upsert are fine for ~850k rows, not for tens of millions (see [section 8](#8-what-changes-for-france-sirene-insee)).
+- **Volume:** JDBC batch inserts and a single-statement upsert are fine for ~850k rows, not for millions.
 
 ## 6. Data quality
 
@@ -226,9 +226,9 @@ s3://<bucket>/COUNTRY=UK/landing/snapshot_date=YYYY-MM-DD/   raw Parquet + manif
 EventBridge Scheduler (monthly, a few days after the 1st) → Step Functions:
 
 1. **Download + ingest:** a Python shell job (or Lambda, for the download only)
-2. **`transform_load`:** Glue Spark job, parameters `SOURCE_PATH` / `SNAPSHOT_DATE`
-3. **DQ gate:** Choice state on the report. Stop and notify on critical failures
-4. **Notification:** SNS with the DQ summary
+2. **`transform_load`:** An AWS Glue Spark job that accepts `SOURCE_PATH` / `SNAPSHOT_DATE` as parameters.
+3. **DQ gate:** A Choice state that evaluates the report. It halts execution and sends a notification if critical failures are detected.
+4. **Notification:** Data Quality summary sent via Amazon SNS
 
 Retries with backoff on steps 1 and 2. Both are idempotent, so a retry or a manual re-run for the same snapshot is safe. `run_pipeline.py` is the local equivalent of this state machine.
 
