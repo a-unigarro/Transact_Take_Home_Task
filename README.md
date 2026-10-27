@@ -140,13 +140,13 @@ docker compose --profile manual up -d pgadmin
 
 ### 4.1 Glue runtime
 
-Official AWS Glue 5.0 Docker image (local), not my AWS account.
+**Choice:** the official AWS Glue 5.0 Docker image, run locally, instead of deploying the job to the Glue service in my own AWS account. Storage is a separate choice: the Parquet lives in my S3 bucket, and the job reads it directly.
 
-- **Why:** no cost, fast iteration, and the same Spark 3.5 / `awsglue` libraries as the service.
-- **What is real:** the job reads Parquet directly from S3, so S3 access is real. Only compute and database are local.
-- **Same script everywhere:** no environment-specific code (no dotenv, no profile handling). Parameters come from the command line or Glue job parameters, and AWS credentials from the default provider chain (environment variables locally, the IAM role in Glue).
-- **Credentials:** keys in `.env` (git-ignored) are injected into the container as environment variables. Mounting `~/.aws` did not work: the container user (UID 10000) cannot read 600-mode files owned by another UID, and the SDK reports that as an empty profile file.
+- **Why local:** no Glue billing, fast iteration, and the same Spark 3.5 / `awsglue` libraries as the service.
+- **Database:** the task allows a local Docker Postgres. A Glue job in AWS could not reach it without a VPC connection and an RDS instance, so running Glue in AWS would have added cost and setup. S3 access is real (my bucket, IAM keys). Only compute and database are local.
+- **Credentials:** keys in `.env` (git-ignored) are injected into the container as environment variables.
 - **Versions:** ingestion runs PySpark on the host; the job runs on Spark 3.5.4 (Glue 5.0 image).
+
 
 ### 4.2 Landing format
 
