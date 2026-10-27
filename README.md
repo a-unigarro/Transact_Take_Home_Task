@@ -45,39 +45,33 @@ Same snapshot, run twice, fresh database:
 
 Count chain: CSV 849,999 = Parquet 849,999 = rows read 849,999 = company [N] + rejected [N]
 
-## 1. Suggested walkthrough (about 20 minutes)
+# 1. Repository tour
 
-| Min | Topic | What to look at |
+Core files in the order I suggest reading them (about 20 minutes).
+
+| Path | What it does | Point out |
 |---|---|---|
-| 2 | Overview | This page: flow and requirement map |
-| 3 | Ingestion | `src/download_source.py`, `src/ingestion/ingest_data.py`. Row counts are checked three times (CSV = Spark read = Parquet); the landing manifest is written only after the check passes |
-| 6 | Glue job | `transform_load.py`, in this order: `transform()` → `split_rejects()` → `dq_report()` → `jdbc_write()` → `upsert_sql()`. Key points: `country_code` vs `CountryOfOrigin`, legal form lookup, deterministic duplicate removal, row reconciliation |
-| 3 | Idempotency | `sql/001_schema.sql` and [section 5](#5-idempotent-load). Live demo: `python run_pipeline.py --skip-download --skip-ingest --runs 2`, second run prints `0` |
-| 2 | Data quality | `output/dq/snapshot_date=2026-10-01/report.json` and the rejected table ([demo queries](#11-demo-queries)) |
-| 3 | AWS and France | [Section 7](#7-monthly-refresh-on-aws) and [section 8](#8-what-changes-for-france-sirene-insee) |
-| 1 | Trade-offs | [Section 9](#9-what-i-cut-and-why) |
+| This README | Flow and requirement map | The table above |
+| `src/download_source.py`, `src/ingestion/ingest_data.py` | Download, then CSV → Parquet (S3 or local) | Row counts checked three times (CSV = Spark read = Parquet); manifest written only after the check passes |
+| `src/glue/transform_load.py` | **The Glue job (main deliverable)** | Read in this order: `transform()` → `split_rejects()` → `dq_report()` → `jdbc_write()` → `upsert_sql()`. Key points: `country_code` vs `CountryOfOrigin`, legal form lookup, deterministic duplicate removal, row reconciliation |
+| `sql/001_schema.sql` | `company`, `company_staging`, `company_rejected` | [Idempotency design](#4-idempotent-load). Live demo: `python run_pipeline.py --skip-download --skip-ingest --runs 2`, second run prints `0` |
+| `output/dq/snapshot_date=2026-10-01/report.json` | DQ report | Plus the rejected table ([demo queries](#10-demo-queries)) |
 
-## 2. Repository layout
+Supporting files:
 
 | Path | Purpose |
 |---|---|
 | `run_pipeline.py` | Runs all steps in order (driver, DB, download, Parquet, job) |
 | `settings.py` | Configuration from `.env` (paths, AWS, snapshot date) |
-| `src/download_source.py` | Downloads the zip, extracts the CSV, writes a local manifest |
-| `src/ingestion/ingest_data.py` | Raw CSV → Parquet (S3 or local), row counts verified |
-| `src/ingestion/storage.py` | Same calls for a local folder or an `s3://` location |
-| `src/ingestion/session.py` | Local Spark session for the ingestion step |
-| `src/glue/transform_load.py` | **The Glue job (main deliverable)** |
-| `sql/001_schema.sql` | `company`, `company_staging`, `company_rejected` |
+| `src/ingestion/storage.py`, `session.py` | Same calls for local or `s3://`; local Spark session for ingestion |
 | `docker-compose.yml` | PostgreSQL, the Glue 5.0 image, optional pgAdmin |
 | `scripts/get_jdbc.py` | Downloads the PostgreSQL JDBC driver into `./jars` |
 | `pgadmin/servers.example.json` | pgAdmin connection template (optional tool) |
-| `output/dq/` | DQ reports (folder versioned, content git-ignored) |
-| `output/logs/` | Full Spark logs per run (git-ignored) |
+| `output/dq/`, `output/logs/` | DQ reports (folder versioned) and full Spark logs (content git-ignored) |
 
 Not included: the Terraform used to create the S3 bucket (any private bucket works).
 
-## 3. How to run
+## 2. How to run
 
 **Requirements:** Docker, Python 3.11+, Java 17+ (only for the ingestion step on the host).
 
@@ -124,7 +118,7 @@ docker compose run --rm glue spark-submit \
 - `s3://<bucket>/COUNTRY=UK/landing/snapshot_date=2026-10-01`
 - `/home/hadoop/workspace/data/COUNTRY=UK/landing/snapshot_date=2026-10-01` (local)
 
-If `run_pipeline.py` has never run, create the report folder first: `mkdir -p output/dq && chmod -R 777 output`.
+`run_pipeline.py` creates `output/dq` and makes it writable for the container user. Only if you run the job by hand without ever running the script, do it yourself first: `mkdir -p output/dq && chmod -R 777 output`.
 
 ### Optional: pgAdmin
 
