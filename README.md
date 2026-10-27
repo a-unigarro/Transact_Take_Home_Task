@@ -22,11 +22,7 @@ CSV (one split file) → raw Parquet (S3 or local) → Glue PySpark job → Post
 | iii | Idempotent load | `transform_load.py`, `sql/001_schema.sql` |
 | iv | Spark JDBC → PostgreSQL | `jdbc_write()`, `run_sql()` |
 | v | Data quality checks | `output/dq/.../report.json` |
-| vi-a | Monthly refresh on AWS | [Section 7](#7-monthly-refresh-on-aws) |
-| vi-b | France (SIRENE) | [Section 8](#8-what-changes-for-france-sirene-insee) |
-| | SIC → NACE note | [4.4](#44-sic--nace) | 
-| | What I cut | [Section 9](#9-what-i-cut-and-why) |
-| | AI tools used | [Section 10](#10-use-of-ai-tools) |
+| vi-a | [Section 7](#7-monthly-refresh-on-aws) - [Section 10](#10-use-of-ai-tools) |
 
 ## Evidence of idempotency
 
@@ -46,7 +42,7 @@ Core files in the order I suggest reading them (about 20 minutes).
 | Path | What it does | Point out |
 |---|---|---|
 | This README | Flow and requirement map | The table above |
-| `src/download_source.py`, `src/ingestion/ingest_data.py` | Download, then CSV → Parquet (S3 or local) | Row counts checked three times (CSV = Spark read = Parquet); manifest written only after the check passes |
+| `src/download_source.py`, `src/ingestion/ingest_data.py` | Download, then CSV → Parquet (S3 or local) | Row counts checked three times (CSV = Spark read = Parquet). Manifest written only after the check passes |
 | `src/glue/transform_load.py` | **The Glue job (main deliverable)** | Read in this order: `transform()` → `split_rejects()` → `dq_report()` → `jdbc_write()` → `upsert_sql()`. Key points: `country_code` vs `CountryOfOrigin`, legal form lookup, deterministic duplicate removal, row reconciliation |
 | `sql/001_schema.sql` | `company`, `company_staging`, `company_rejected` | [Idempotency design](#4-idempotent-load). Live demo: `python run_pipeline.py --skip-download --skip-ingest --runs 2`, second run prints `0` |
 | `output/dq/snapshot_date=2026-10-01/report.json` | DQ report | Plus the rejected table ([demo queries](#10-demo-queries)) |
@@ -57,7 +53,7 @@ Supporting files:
 |---|---|
 | `run_pipeline.py` | Runs all steps in order (driver, DB, download, Parquet, job) |
 | `settings.py` | Configuration from `.env` (paths, AWS, snapshot date) |
-| `src/ingestion/storage.py`, `session.py` | Same calls for local or `s3://`; local Spark session for ingestion |
+| `src/ingestion/storage.py`, `session.py` | Same calls for local or `s3://`. Local Spark session for ingestion |
 | `docker-compose.yml` | PostgreSQL, the Glue 5.0 image, optional pgAdmin |
 | `scripts/get_jdbc.py` | Downloads the PostgreSQL JDBC driver into `./jars` |
 | `pgadmin/servers.example.json` | pgAdmin connection template (optional tool) |
@@ -122,7 +118,7 @@ docker compose run --rm glue spark-submit \
 
 ### Optional: pgAdmin
 
-Only for inspecting tables. Open http://localhost:8080 (login `admin@admin.com` / `admin`; it asks for `DB_PASSWORD` the first time).
+Only for inspecting tables. Open http://localhost:8080 (login `admin@admin.com` / `admin`. It asks for `DB_PASSWORD` the first time).
 
 ```bash
 cp pgadmin/servers.example.json pgadmin/servers.json   # user/db must match .env
@@ -145,7 +141,7 @@ docker compose --profile manual up -d pgadmin
 - **Why local:** no Glue billing, fast iteration, and the same Spark 3.5 / `awsglue` libraries as the service.
 - **Database:** the task allows a local Docker Postgres. A Glue job in AWS could not reach it without a VPC connection and an RDS instance, so running Glue in AWS would have added cost and setup. S3 access is real (my bucket, IAM keys). Only compute and database are local.
 - **Credentials:** keys in `.env` (git-ignored) are injected into the container as environment variables.
-- **Versions:** ingestion runs PySpark on the host; the job runs on Spark 3.5.4 (Glue 5.0 image).
+- **Versions:** ingestion runs PySpark on the host. The job runs on Spark 3.5.4 (Glue 5.0 image).
 
 ### 4.2 Harmonized schema 
 
@@ -161,7 +157,7 @@ docker compose --profile manual up -d pgadmin
 
 ### 4.3 SIC → NACE
 
-UK SIC 2007 is aligned with NACE Rev. 2 at four digits; the fifth digit is a UK extension.
+UK SIC 2007 is aligned with NACE Rev. 2 at four digits. The fifth digit is a UK extension.
 
 - **Mapping:** keep the first four digits and format `NN.NN` (SIC `62012` → NACE `62.01`).
 
@@ -225,9 +221,9 @@ s3://<bucket>/COUNTRY=UK/zip/snapshot_date=YYYY-MM-DD/       original downloads
 s3://<bucket>/COUNTRY=UK/landing/snapshot_date=YYYY-MM-DD/   raw Parquet + manifest
 ```
 
-- In this repo only the Parquet goes to S3; zip and CSV stay on local disk. In AWS the download step would write the zip files to S3.
+- In this repo only the Parquet goes to S3. zip and CSV stay on local disk. In AWS the download step would write the zip files to S3.
 - The monthly job reads exactly one partition, and old snapshots are kept for reprocessing.
-- Lifecycle rule: expire after N months; Parquet kept.
+- Lifecycle rule: expire after N months, Parquet kept.
 
 ### Orchestration
 
@@ -235,7 +231,7 @@ EventBridge Scheduler (monthly, a few days after the 1st) → Step Functions:
 
 1. **Download + ingest:** a Python shell job (or Lambda, for the download only)
 2. **`transform_load`:** Glue Spark job, parameters `SOURCE_PATH` / `SNAPSHOT_DATE`
-3. **DQ gate:** Choice state on the report; stop and notify on critical failures
+3. **DQ gate:** Choice state on the report. Stop and notify on critical failures
 4. **Notification:** SNS with the DQ summary
 
 Retries with backoff on steps 1 and 2. Both are idempotent, so a retry or a manual re-run for the same snapshot is safe. `run_pipeline.py` is the local equivalent of this state machine.
