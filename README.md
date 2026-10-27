@@ -37,8 +37,6 @@ Count chain: CSV 849,999 = Parquet 849,999 = rows read 849,999 = company + rejec
 
 # 1. Repository tour
 
-Core files in the order I suggest reading them (about 20 minutes).
-
 | Path | What it does | Point out |
 |---|---|---|
 | `src/download_source.py`, `src/ingestion/ingest_data.py` | Download, then CSV → Parquet (S3 or local) | Row counts checked three times (CSV = Spark read = Parquet). Manifest written only after the check passes |
